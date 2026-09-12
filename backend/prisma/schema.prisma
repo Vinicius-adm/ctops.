@@ -1,0 +1,315 @@
+// Este é o arquivo de schema do Prisma,
+// saiba mais sobre isso na documentação: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  password_hash String
+  role          String   @default("USER")
+  is_active     Boolean  @default(true)
+  avatar_url    String?
+  created_at    DateTime @default(now())
+  updated_at    DateTime @updatedAt
+
+  jobs           Job[]
+  apis           API[]
+  databases      Database[]
+  agents         Agent[]
+  alert_rules    AlertRule[]
+  incident_rules IncidentRule[]
+  container_pins UserContainerPin[]
+  containers     Container[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Job {
+  id            String @id @default(cuid())
+  owner_user_id String
+  owner         User   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade)
+
+  name        String
+  description String?
+  schedule    String?
+  status      String    @default("active")
+  last_run_at DateTime?
+  next_run_at DateTime?
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  events JobEvent[]
+
+  @@index([owner_user_id])
+  @@index([status])
+}
+
+model JobEvent {
+  id          String   @id @default(cuid())
+  job_id      String
+  job         Job      @relation(fields: [job_id], references: [id], onDelete: Cascade)
+  status      String
+  output      String?
+  error       String?
+  duration_ms Int?
+  created_at  DateTime @default(now())
+
+  @@index([job_id])
+  @@index([created_at])
+}
+
+model API {
+  id            String @id @default(cuid())
+  owner_user_id String
+  owner         User   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade)
+
+  name                   String
+  url                    String
+  method                 String   @default("GET")
+
+  // AUTH POR API (OPÇÃO 1): TOKEN/HEADERS POR REGISTRO
+  // - auth_token E headers_json SÃO ARMAZENADOS ENCRIPTADOS
+  // - NUNCA RETORNAR PARA O FRONT EM CLARO
+  auth_type        String  @default("NONE") // NONE | BEARER | HEADER
+  auth_header_name String  @default("Authorization")
+  auth_token       String?
+  headers_json     String?
+
+  // BODY (PARA POST/PUT/PATCH) - ARMAZENADO ENCRIPTADO QUANDO PRESENTE
+  body                    String?
+  // VALIDACAO OPCIONAL: CHAVE QUE DEVE EXISTIR NO JSON DE RESPOSTA
+  validation_json_key     String?
+  description            String?
+  check_interval_seconds Int       @default(300)
+  timeout_seconds        Int       @default(10)
+  last_check_at          DateTime?
+  is_up                  Boolean?
+  latency_ms             Int?
+  last_http_status       Int?
+  last_error             String?
+  created_at             DateTime  @default(now())
+  updated_at             DateTime  @updatedAt
+
+  // ✅ ADICIONE ISTO
+  events APIHealthEvent[]
+
+  @@index([owner_user_id])
+  @@index([is_up])
+}
+
+model APIHealthEvent {
+  id     String @id @default(cuid())
+  api_id String
+  api    API    @relation(fields: [api_id], references: [id], onDelete: Cascade)
+
+  checked_at DateTime @default(now())
+  ok         Boolean
+  status     Int?
+  latency_ms Int
+  error      String?
+
+  @@index([api_id, checked_at])
+  @@index([ok])
+}
+
+model Database {
+  id            String @id @default(cuid())
+  owner_user_id String
+  owner         User   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade)
+
+  name          String
+  type          String
+  host          String
+  port          Int
+  database_name String
+  description   String?
+  last_check_at DateTime?
+  is_healthy    Boolean?
+  error_message String?
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  health_checks DatabaseHealthCheck[]
+
+  @@index([owner_user_id])
+  @@index([is_healthy])
+}
+
+model Agent {
+  id            String @id @default(cuid())
+  owner_user_id String
+  owner         User   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade)
+
+  name          String
+  description   String?
+  endpoint      String?
+  last_check_at DateTime?
+  is_healthy    Boolean?
+  latency_ms    Int?
+  error_count   Int       @default(0)
+  created_at    DateTime  @default(now())
+  updated_at    DateTime  @updatedAt
+
+  @@index([owner_user_id])
+  @@index([is_healthy])
+}
+
+model AlertRule {
+  id            String @id @default(cuid())
+  owner_user_id String
+  owner         User   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade)
+
+  name                  String
+  description           String?
+  condition             String
+  enabled               Boolean  @default(true)
+  notification_channels String?
+  created_at            DateTime @default(now())
+  updated_at            DateTime @updatedAt
+
+  @@index([owner_user_id])
+  @@index([enabled])
+}
+
+model IncidentRule {
+  id            String @id @default(cuid())
+  owner_user_id String
+  owner         User   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade)
+
+  name         String
+  description  String?
+  condition    String
+  severity     String
+  auto_resolve Boolean  @default(false)
+  created_at   DateTime @default(now())
+  updated_at   DateTime @updatedAt
+
+  incidents Incident[]
+
+  @@index([owner_user_id])
+  @@index([severity])
+}
+
+model Incident {
+  id      String        @id @default(cuid())
+  rule_id String?
+  rule    IncidentRule? @relation(fields: [rule_id], references: [id], onDelete: SetNull)
+
+  status      String    @default("open")
+  severity    String
+  title       String
+  description String?
+  created_at  DateTime  @default(now())
+  resolved_at DateTime?
+
+  @@index([rule_id])
+  @@index([status])
+  @@index([severity])
+  @@index([created_at])
+}
+
+model UserContainerPin {
+  id      String @id @default(cuid())
+  user_id String
+  user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  container_name String
+  pinned         Boolean  @default(true)
+  created_at     DateTime @default(now())
+
+  @@unique([user_id, container_name])
+  @@index([user_id])
+}
+
+// ===== Container monitoring models =====
+model Container {
+  id            String @id @default(cuid())
+  owner_user_id String
+  owner         User   @relation(fields: [owner_user_id], references: [id], onDelete: Cascade)
+
+  // NOVO: QUAL “TIPO” DE CONTAINER
+  provider String @default("docker") // docker | azure_aci | azure_containerapps
+
+  // IDENTIDADE “AMIGÁVEL”
+  name     String
+  image    String
+  registry String?
+
+  // DOCKER
+  host String? // docker socket / named pipe / tcp://host:2375
+
+  // AZURE (ACI / Container Apps)
+  azure_subscription_id String?
+  azure_resource_group  String?
+  azure_resource_name   String? // ACI: containerGroupName | ContainerApps: containerAppName
+  azure_revision_name   String? // Container Apps: revisionName (obrigatório para restart)
+  azure_container_name  String? // ACI: containerName (para logs)
+
+  status                   String?
+  restarts                 Int       @default(0)
+  last_seen_at             DateTime?
+  polling_interval_seconds Int       @default(60)
+  enabled                  Boolean   @default(true)
+
+  credentials ContainerCredential[]
+  logs        ContainerLog[]
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  @@index([owner_user_id])
+  @@index([status])
+  @@index([provider])
+}
+
+model ContainerCredential {
+  id           String    @id @default(cuid())
+  container_id String
+  container    Container @relation(fields: [container_id], references: [id], onDelete: Cascade)
+
+  type            String // dockerhub | engine | azure_sp
+  username        String?
+  token_encrypted String
+  tls_cert        String?
+  tls_key         String?
+  created_by      String?
+  created_at      DateTime @default(now())
+
+  @@index([container_id])
+}
+
+model ContainerLog {
+  id           String    @id @default(cuid())
+  container_id String
+  container    Container @relation(fields: [container_id], references: [id], onDelete: Cascade)
+
+  timestamp DateTime @default(now())
+  level     String
+  message   String
+
+  @@index([container_id])
+  @@index([timestamp])
+}
+
+model DatabaseHealthCheck {
+  id          String   @id @default(cuid())
+  database_id String
+  ok          Boolean
+  latency_ms  Int
+  error       String?
+  created_at  DateTime @default(now())
+
+  database Database @relation(fields: [database_id], references: [id], onDelete: Cascade)
+
+  @@index([database_id, created_at])
+}
