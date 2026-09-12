@@ -1,0 +1,19 @@
+Como conectar nos containers (comandos úteis) 🔧
+Listar containers:
+
+docker ps -a
+Entrar no psql dentro do container:
+
+docker exec -it ctops-postgres psql -U ctops -d ctops_db
+Se preferir conectar do host (se tiver psql instalado):
+
+psql -h localhost -p 5433 -U ctops -d ctops_db
+Entrar no Redis:
+
+docker exec -it ctops-redis redis-cli
+ou redis-cli -h localhost -p 6379
+Ver logs:
+
+docker logs --tail 200 ctops-postgres
+docker logs --tail 200 ctops-redis
+docker-compose logs -f
